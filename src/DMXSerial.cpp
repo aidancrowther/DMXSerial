@@ -106,6 +106,7 @@ uint8_t _dmxRecvState; // Current State of receiving DMX Bytes
 int _dmxChannel; // the next channel byte to be sent.
 uint16_t _dmxRecvAddress = 0; // the address to which the devic should listen
 uint16_t _dmxReceivePos = 0; // the DMX receiver channel count
+bool _dmxXFRComplete = false;
 
 volatile int _dmxMaxChannel = 0; // the last channel used for sending (1..512).
 volatile unsigned long _dmxLastPacket = 0; // the last time (using the millis function) a packet was received.
@@ -154,6 +155,7 @@ void DMXSerialClass::init(int mode, int dmxModePin)
   _dmxLastPacket = millis(); // remember current (relative) time in msecs.
   _dmxLastUpdate = _dmxLastPacket;
   _dmxReceivePos = 0;
+  _dmxXFRComplete = false;
 
   _dmxDataLastPtr = _dmxData + _dmxMaxChannel;
 
@@ -329,7 +331,17 @@ void DMXSerialClass::setAddress(uint16_t address)
   } else {
     _dmxRecvAddress = address;
   }
-}
+} //setAddress(address)
+
+
+// Return whether a complete packet has been received
+bool DMXSerialClass::packetReady(void)
+{
+  if(_dmxXFRComplete){
+    _dmxXFRComplete = false;
+    return true;
+  } else return false;
+} //packetReady()
 
 // ----- internal functions and interrupt implementations -----
 
@@ -416,6 +428,7 @@ void _DMXReceived(uint8_t data, uint8_t frameerror)
     } else {
       // continue on DMXReceiver mode.
       _dmxRecvState = IDLE; // wait for next break
+      _dmxXFRComplete = true;
     }
   } // if
 

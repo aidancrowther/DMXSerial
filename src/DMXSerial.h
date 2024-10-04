@@ -177,6 +177,17 @@ class DMXSerialClass
      * @return void
     */
     void setAddress(uint16_t address);
+
+    /**
+     * @brief Returns whether a full packet of DMX data has arrived
+     * When a complete packet has arrived this value will be held true
+     * even if more data has begun arriving since then, be mindful. This
+     * function will only return true once and will reset the internal tracker
+     * on a true result being returned.
+     * @return true when a complete DMX packet has been received
+     * @return false when there has not been a complete packet received
+     */
+    bool packetReady();
     
     /**
      * @brief Terminate the current operation mode.
