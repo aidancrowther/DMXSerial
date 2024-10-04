@@ -104,15 +104,18 @@ int _dmxModePin; // pin used for I/O direction.
 
 uint8_t _dmxRecvState; // Current State of receiving DMX Bytes
 int _dmxChannel; // the next channel byte to be sent.
+uint16_t _dmxRecvAddress = 0; // the address to which the devic should listen
+uint16_t _dmxReceivePos = 0; // the DMX receiver channel count
 
-volatile int _dmxMaxChannel = 32; // the last channel used for sending (1..512).
+volatile int _dmxMaxChannel = 0; // the last channel used for sending (1..512).
 volatile unsigned long _dmxLastPacket = 0; // the last time (using the millis function) a packet was received.
 
 bool _dmxUpdated = true; // is set to true when new data arrived.
+volatile unsigned long _dmxLastUpdate = 0; // the last time (using the millis function) a packet updated a channel.
 
 // Array of DMX values (raw).
 // Entry 0 will never be used for DMX data but will store the startbyte (0 for DMX mode).
-uint8_t _dmxData[DMXSERIAL_MAX + 1];
+uint8_t* _dmxData;
 
 // This pointer will point to the next byte in _dmxData;
 uint8_t *_dmxDataPtr;
@@ -137,19 +140,26 @@ void DMXSerialClass::init(int mode)
 void DMXSerialClass::init(int mode, int dmxModePin)
 {
   // initialize global variables
+
+  if(!_dmxRecvAddress) _dmxRecvAddress = 1;
+  if(!_dmxMaxChannel) _dmxMaxChannel = DMXSERIAL_MAX; // The default in Receiver mode is reading all possible 512 channels.
+
+  _dmxData = malloc((min(_dmxMaxChannel, DMXSERIAL_MAX) + 1) * sizeof(uint8_t));
+
   _dmxMode = DMXNone;
   _dmxModePin = dmxModePin;
   _dmxRecvState = STARTUP; // initial state
   _dmxChannel = 0;
   _dmxDataPtr = _dmxData;
   _dmxLastPacket = millis(); // remember current (relative) time in msecs.
+  _dmxLastUpdate = _dmxLastPacket;
+  _dmxReceivePos = 0;
 
-  _dmxMaxChannel = DMXSERIAL_MAX; // The default in Receiver mode is reading all possible 512 channels.
   _dmxDataLastPtr = _dmxData + _dmxMaxChannel;
 
   // initialize the DMX buffer
   //  memset(_dmxData, 0, sizeof(_dmxData));
-  for (int n = 0; n < DMXSERIAL_MAX + 1; n++)
+  for (int n = 0; n < _dmxMaxChannel + 1; n++)
     _dmxData[n] = 0;
 
   // now start
@@ -297,8 +307,29 @@ void DMXSerialClass::term(void)
 {
   // Disable all USART Features, including Interrupts
   _DMX_setMode(DMXUARTMode::OFF);
+  free(_dmxData);
 } // term()
 
+
+// Calculate how long it has been since a channel was updated
+unsigned long DMXSerialClass::noUpdateSince(void)
+{
+  unsigned long now = millis();
+  return (now - _dmxLastUpdate);
+} //noUpdateSince()
+
+
+// Set the DMX address of the listening device
+void DMXSerialClass::setAddress(uint16_t address)
+{
+  if(address < 1){
+    _dmxRecvAddress = 1;
+  } else if(address >= DMXSERIAL_MAX){
+    _dmxRecvAddress = DMXSERIAL_MAX;
+  } else {
+    _dmxRecvAddress = address;
+  }
+}
 
 // ----- internal functions and interrupt implementations -----
 
@@ -342,6 +373,7 @@ void _DMXReceived(uint8_t data, uint8_t frameerror)
     // break condition detected.
     _dmxRecvState = BREAK;
     _dmxDataPtr = _dmxData;
+    _dmxReceivePos = 0;
 
   } else if (DmxState == BREAK) {
     // first byte after a break was read.
@@ -350,6 +382,7 @@ void _DMXReceived(uint8_t data, uint8_t frameerror)
       _dmxRecvState = DATA;
       _dmxLastPacket = millis(); // remember current (relative) time in msecs.
       _dmxDataPtr++; // start saving data with channel # 1
+      _dmxReceivePos++;
 
     } else {
       // This might be a RDM or customer DMX command -> not implemented so wait for next BREAK !
@@ -358,12 +391,16 @@ void _DMXReceived(uint8_t data, uint8_t frameerror)
 
   } else if (DmxState == DATA) {
     // check for new data
-    if (*_dmxDataPtr != data) {
-      _dmxUpdated = true;
-      // store received data into dmx data buffer.
-      *_dmxDataPtr = data;
-    } // if
-    _dmxDataPtr++;
+    if(_dmxReceivePos >= _dmxRecvAddress && _dmxReceivePos < (_dmxRecvAddress+_dmxMaxChannel)){
+      if (*_dmxDataPtr != data) {
+        _dmxUpdated = true;
+        _dmxLastUpdate = millis();
+        // store received data into dmx data buffer.
+        *_dmxDataPtr = data;
+      } // if
+      _dmxDataPtr++;
+    }
+    _dmxReceivePos++;
 
     if (_dmxDataPtr > _dmxDataLastPtr) {
       // all channels received.

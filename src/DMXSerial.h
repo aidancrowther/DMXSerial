@@ -163,6 +163,20 @@ class DMXSerialClass
      * @return false after timeout no package was received.
      */
     bool receive(uint8_t wait);
+
+    /**
+     * @brief Return the duration since the last time a channel had updated data
+     * This function will report and and all channel updates, so may not be useful for busy networks
+     * @return long milliseconds since an update was detected
+     */
+    unsigned long noUpdateSince();
+
+    /**
+     * @brief Specifies the address to which the receiver should listen
+     * @param address The DMX address of the receiver
+     * @return void
+    */
+    void setAddress(uint16_t address);
     
     /**
      * @brief Terminate the current operation mode.
